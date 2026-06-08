@@ -88,7 +88,7 @@ def supervisor_node(state: State) -> Command[Literal[*TEAM_MEMBERS, "__end__"]]:
     messages = apply_prompt_template("supervisor", state)
     response = (
         get_llm_by_type(AGENT_LLM_MAP["supervisor"])
-        .with_structured_output(Router)
+        .with_structured_output(Router, method="function_calling")
         .invoke(messages)
     )
     goto = response["next"]
@@ -129,7 +129,7 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
         else:
             search_text = str(searched_content)
         messages[-1].content += f"\n\n# Relative Search Results\n\n{search_text}"
-    structured_llm = llm.with_structured_output(Plan)
+    structured_llm = llm.with_structured_output(Plan, method="function_calling")
     plan: Plan = structured_llm.invoke(messages)
     full_response = plan.model_dump_json(indent=2)
     logger.debug(f"Planner structured plan: {full_response}")
