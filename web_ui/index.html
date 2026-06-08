@@ -238,17 +238,11 @@ let toolCallEls = {};   // tool_call_id → DOM element
 // Current response block refs
 let curBlock, curAgentsBar, curThinkEl, curThinkBody, curContentEl, curToolsEl;
 
-// Marked config
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-  highlight: (code, lang) => {
-    if (lang && hljs.getLanguage(lang)) {
-      return hljs.highlight(code, { language: lang }).value;
-    }
-    return hljs.highlightAuto(code).value;
-  }
-});
+// Scroll throttle — avoid 600+ forced scroll-to-bottom calls during streaming
+let scrollPending = false;
+
+// Marked config — note: highlight option removed in marked v9; hljs runs in finalizeContent
+marked.setOptions({ breaks: true, gfm: true });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
@@ -459,17 +453,28 @@ let rawContent = '';
 
 function appendContent(text) {
   rawContent += text;
-  curContentEl.innerHTML = marked.parse(rawContent);
-  curContentEl.classList.add('streaming-cursor');
-  hljs.highlightAll();
-  scrollBottom();
+  if (!curContentEl) return;
+  // Plain textContent is fast (no parsing). Markdown renders once in finalizeContent.
+  curContentEl.textContent = rawContent;
+  throttledScroll();
 }
 
 function finalizeContent() {
+  scrollPending = false;
   if (!curContentEl) return;
   curContentEl.classList.remove('streaming-cursor');
-  curContentEl.innerHTML = marked.parse(rawContent);
-  hljs.highlightAll();
+  if (rawContent) {
+    curContentEl.innerHTML = marked.parse(rawContent);
+    curContentEl.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+  }
+  scrollBottom();
+}
+
+function throttledScroll() {
+  if (!scrollPending) {
+    scrollPending = true;
+    requestAnimationFrame(() => { scrollPending = false; scrollBottom(); });
+  }
 }
 
 // ── SSE parsing ───────────────────────────────────────────────────────────────
@@ -593,6 +598,8 @@ async function handleSend() {
   rawContent  = '';
   thinkRaw    = '';
   toolCallEls = {};
+  scrollPending = false;
+  Object.keys(agentBadgeMap).forEach(k => delete agentBadgeMap[k]);
   curBlock = curAgentsBar = curThinkEl = curThinkBody = curContentEl = curToolsEl = null;
 
   messages.push({ role: 'user', content: text });
@@ -623,6 +630,8 @@ function newChat() {
   rawContent  = '';
   thinkRaw    = '';
   toolCallEls = {};
+  scrollPending = false;
+  Object.keys(agentBadgeMap).forEach(k => delete agentBadgeMap[k]);
   curBlock = curAgentsBar = curThinkEl = curThinkBody = curContentEl = curToolsEl = null;
 
   messagesEl.innerHTML = `
