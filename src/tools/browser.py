@@ -3,19 +3,17 @@ import asyncio
 from pydantic import BaseModel, Field
 from typing import Optional, ClassVar, Type
 from langchain.tools import BaseTool
-from browser_use import AgentHistoryList, Browser, BrowserConfig
-from browser_use import Agent as BrowserAgent
+from browser_use.agent.views import AgentHistoryList
+from browser_use.agent.service import Agent as BrowserAgent
+from browser_use.browser.profile import BrowserProfile
 from src.agents.llm import vl_llm
 from src.tools.decorators import create_logged_tool
 from src.config import CHROME_INSTANCE_PATH
 
-expected_browser = None
-
-# Use Chrome instance if specified
-if CHROME_INSTANCE_PATH:
-    expected_browser = Browser(
-        config=BrowserConfig(chrome_instance_path=CHROME_INSTANCE_PATH)
-    )
+browser_profile = BrowserProfile(
+    executable_path=CHROME_INSTANCE_PATH if CHROME_INSTANCE_PATH else None,
+    headless=True,
+)
 
 
 class BrowserUseInput(BaseModel):
@@ -36,20 +34,16 @@ class BrowserTool(BaseTool):
     def _run(self, instruction: str) -> str:
         """Run the browser task synchronously."""
         self._agent = BrowserAgent(
-            task=instruction,  # Will be set per request
+            task=instruction,
             llm=vl_llm,
-            browser=expected_browser,
+            browser_profile=browser_profile,
         )
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
                 result = loop.run_until_complete(self._agent.run())
-                return (
-                    str(result)
-                    if not isinstance(result, AgentHistoryList)
-                    else result.final_result
-                )
+                return result.final_result() if isinstance(result, AgentHistoryList) else str(result)
             finally:
                 loop.close()
         except Exception as e:
@@ -58,15 +52,13 @@ class BrowserTool(BaseTool):
     async def _arun(self, instruction: str) -> str:
         """Run the browser task asynchronously."""
         self._agent = BrowserAgent(
-            task=instruction, llm=vl_llm  # Will be set per request
+            task=instruction,
+            llm=vl_llm,
+            browser_profile=browser_profile,
         )
         try:
             result = await self._agent.run()
-            return (
-                str(result)
-                if not isinstance(result, AgentHistoryList)
-                else result.final_result
-            )
+            return result.final_result() if isinstance(result, AgentHistoryList) else str(result)
         except Exception as e:
             return f"Error executing browser task: {str(e)}"
 
