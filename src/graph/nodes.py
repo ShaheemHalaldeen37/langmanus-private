@@ -12,7 +12,7 @@ from src.config import TEAM_MEMBERS
 from src.config.agents import AGENT_LLM_MAP
 from src.prompts.template import apply_prompt_template
 from src.tools.search import tavily_tool
-from .types import State, Router
+from .types import State, Router, Plan
 
 logger = logging.getLogger(__name__)
 
@@ -115,35 +115,31 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
     if state.get("search_before_planning"):
         searched_content = tavily_tool.invoke({"query": state["messages"][-1].content})
         messages = deepcopy(messages)
-        messages[
-            -1
-        ].content += f"\n\n# Relative Search Results\n\n{json.dumps([{'titile': elem['title'], 'content': elem['content']} for elem in searched_content], ensure_ascii=False)}"
-    stream = llm.stream(messages)
-    full_response = ""
-    for chunk in stream:
-        full_response += chunk.content
-    logger.debug(f"Current state messages: {state['messages']}")
-    logger.debug(f"Planner response: {full_response}")
-
-    if full_response.startswith("```json"):
-        full_response = full_response.removeprefix("```json")
-
-    if full_response.endswith("```"):
-        full_response = full_response.removesuffix("```")
-
-    goto = "supervisor"
-    try:
-        json.loads(full_response)
-    except json.JSONDecodeError:
-        logger.warning("Planner response is not a valid JSON")
-        goto = "__end__"
+        # searched_content may be a string or a list of dicts depending on langchain version
+        if isinstance(searched_content, str):
+            search_text = searched_content
+        elif isinstance(searched_content, list):
+            items = []
+            for elem in searched_content:
+                if isinstance(elem, dict):
+                    items.append({"title": elem.get("title", ""), "content": elem.get("content", "")})
+                else:
+                    items.append({"title": "", "content": str(elem)})
+            search_text = json.dumps(items, ensure_ascii=False)
+        else:
+            search_text = str(searched_content)
+        messages[-1].content += f"\n\n# Relative Search Results\n\n{search_text}"
+    structured_llm = llm.with_structured_output(Plan)
+    plan: Plan = structured_llm.invoke(messages)
+    full_response = plan.model_dump_json(indent=2)
+    logger.debug(f"Planner structured plan: {full_response}")
 
     return Command(
         update={
             "messages": [HumanMessage(content=full_response, name="planner")],
             "full_plan": full_response,
         },
-        goto=goto,
+        goto="supervisor",
     )
 
 
