@@ -1,5 +1,6 @@
 import logging
 import json
+import time
 from copy import deepcopy
 from typing import Literal
 from langchain_core.messages import HumanMessage
@@ -22,6 +23,7 @@ RESPONSE_FORMAT = "Response from {}:\n\n<response>\n{}\n</response>\n\n*Please e
 def research_node(state: State) -> Command[Literal["supervisor"]]:
     """Node for the researcher agent that performs research tasks."""
     logger.info("Research agent starting task")
+    time.sleep(20)
     result = research_agent.invoke(state)
     logger.info("Research agent completed task")
     logger.debug(f"Research agent response: {result['messages'][-1].content}")
@@ -43,6 +45,7 @@ def research_node(state: State) -> Command[Literal["supervisor"]]:
 def code_node(state: State) -> Command[Literal["supervisor"]]:
     """Node for the coder agent that executes Python code."""
     logger.info("Code agent starting task")
+    time.sleep(20)
     result = coder_agent.invoke(state)
     logger.info("Code agent completed task")
     logger.debug(f"Code agent response: {result['messages'][-1].content}")
@@ -85,12 +88,26 @@ def browser_node(state: State) -> Command[Literal["supervisor"]]:
 def supervisor_node(state: State) -> Command[Literal[*TEAM_MEMBERS, "__end__"]]:
     """Supervisor node that decides which agent should act next."""
     logger.info("Supervisor evaluating next action")
+    # Brief pause so the TPM bucket has room before each supervisor call
+    time.sleep(20)
     messages = apply_prompt_template("supervisor", state)
-    response = (
-        get_llm_by_type(AGENT_LLM_MAP["supervisor"])
-        .with_structured_output(Router, method="function_calling")
-        .invoke(messages)
+
+    llm = get_llm_by_type(AGENT_LLM_MAP["supervisor"]).with_structured_output(
+        Router, method="function_calling"
     )
+    response = None
+    for attempt in range(3):
+        try:
+            response = llm.invoke(messages)
+            break
+        except Exception as e:
+            if attempt < 2:
+                wait = 20 * (attempt + 1)
+                logger.warning(f"Supervisor call failed ({e}), retrying in {wait}s…")
+                time.sleep(wait)
+            else:
+                raise
+
     goto = response["next"]
     logger.debug(f"Current state messages: {state['messages']}")
     logger.debug(f"Supervisor response: {response}")
@@ -107,6 +124,7 @@ def supervisor_node(state: State) -> Command[Literal[*TEAM_MEMBERS, "__end__"]]:
 def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
     """Planner node that generate the full plan."""
     logger.info("Planner generating full plan")
+    time.sleep(20)
     messages = apply_prompt_template("planner", state)
     # whether to enable deep thinking mode
     llm = get_llm_by_type("basic")
@@ -146,6 +164,7 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
 def coordinator_node(state: State) -> Command[Literal["planner", "__end__"]]:
     """Coordinator node that communicate with customers."""
     logger.info("Coordinator talking.")
+    time.sleep(20)
     messages = apply_prompt_template("coordinator", state)
     response = get_llm_by_type(AGENT_LLM_MAP["coordinator"]).invoke(messages)
     logger.debug(f"Current state messages: {state['messages']}")
@@ -163,6 +182,7 @@ def coordinator_node(state: State) -> Command[Literal["planner", "__end__"]]:
 def reporter_node(state: State) -> Command[Literal["supervisor"]]:
     """Reporter node that write a final report."""
     logger.info("Reporter write final report")
+    time.sleep(20)
     messages = apply_prompt_template("reporter", state)
     response = get_llm_by_type(AGENT_LLM_MAP["reporter"]).invoke(messages)
     logger.debug(f"Current state messages: {state['messages']}")

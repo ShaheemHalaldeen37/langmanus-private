@@ -21,13 +21,14 @@ def create_openai_llm(
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
     temperature: float = 0.0,
+    max_retries: int = 6,
     **kwargs,
 ) -> ChatOpenAI:
     """
     Create a ChatOpenAI instance with the specified configuration
     """
     # Only include base_url in the arguments if it's not None or empty
-    llm_kwargs = {"model": model, "temperature": temperature, **kwargs}
+    llm_kwargs = {"model": model, "temperature": temperature, "max_retries": max_retries, **kwargs}
 
     if base_url:  # This will handle None or empty string
         llm_kwargs["base_url"] = base_url

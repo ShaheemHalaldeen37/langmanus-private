@@ -195,14 +195,7 @@ async def run_agent_workflow(
             continue
         yield ydata
 
-    if is_handoff_case:
-        yield {
-            "event": "end_of_workflow",
-            "data": {
-                "workflow_id": workflow_id,
-                "messages": [
-                    convert_message_to_dict(msg)
-                    for msg in data["output"].get("messages", [])
-                ],
-            },
-        }
+    yield {
+        "event": "end_of_workflow",
+        "data": {"workflow_id": workflow_id},
+    }
