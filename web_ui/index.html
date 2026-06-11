@@ -128,24 +128,7 @@
       </div>
       <h1 class="text-2xl font-bold text-white mb-2">What can I help you with?</h1>
       <p class="text-gray-500 text-sm mb-8">Multi-agent AI — research, code, browse, and report</p>
-      <div class="grid grid-cols-2 gap-3 text-left">
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">📊 Compare populations</div>
-          <div class="text-xs text-gray-500">Compare the populations of Tokyo and New York with latest data</div>
-        </button>
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">📈 Stock analysis</div>
-          <div class="text-xs text-gray-500">Analyze NVIDIA's stock performance over the last 3 months</div>
-        </button>
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">🔬 Research topic</div>
-          <div class="text-xs text-gray-500">Research the latest developments in quantum computing in 2025</div>
-        </button>
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">🐍 Write & run code</div>
-          <div class="text-xs text-gray-500">Write a Python script to generate a Fibonacci sequence up to 1000</div>
-        </button>
-      </div>
+      <div class="example-grid grid grid-cols-2 gap-3 text-left"></div>
     </div>
 
   </main>
@@ -209,7 +192,31 @@
 
 <script>
 // ── Config ──────────────────────────────────────────────────────────────────
-const API_URL = 'http://localhost:8000/api/chat/stream';
+// Use a relative URL when served by the API server itself; fall back to
+// localhost:8000 when the file is opened directly from disk.
+const API_URL = location.protocol.startsWith('http')
+  ? '/api/chat/stream'
+  : 'http://localhost:8000/api/chat/stream';
+
+const EXAMPLE_QUERIES = [
+  { icon: '📊', title: 'Compare populations', query: 'Compare the populations of Tokyo and New York with latest data' },
+  { icon: '📈', title: 'Stock analysis',      query: "Analyze NVIDIA's stock performance over the last 3 months" },
+  { icon: '🔬', title: 'Research topic',      query: 'Research the latest developments in quantum computing in 2025' },
+  { icon: '🐍', title: 'Write & run code',    query: 'Write a Python script to generate a Fibonacci sequence up to 1000' },
+  { icon: '🌐', title: 'Browse the web',      query: 'Use the browser to open news.ycombinator.com and summarize the top 5 stories' },
+  { icon: '🛒', title: 'Look up a product',   query: 'Use the browser to find the current price of the Raspberry Pi 5 on raspberrypi.com' },
+];
+
+function renderExamples() {
+  document.querySelectorAll('.example-grid').forEach(grid => {
+    grid.innerHTML = EXAMPLE_QUERIES.map(ex => `
+      <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
+        <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">${ex.icon} ${ex.title}</div>
+        <div class="text-xs text-gray-500">${ex.query}</div>
+      </button>
+    `).join('');
+  });
+}
 
 const AGENT_META = {
   coordinator: { label: 'Coordinator', icon: '🧭', border: 'border-indigo-800/50', text: 'text-indigo-300',  dot: 'bg-indigo-400'  },
@@ -304,6 +311,9 @@ function createResponseBlock() {
 function startAgent(name) {
   const meta = AGENT_META[name] || { ...DEFAULT_META, label: name };
 
+  // Flush any buffered stream content belonging to the previous agent
+  flushDelta();
+
   // If workflow was already finalized optimistically (e.g. reporter ended), resume
   if (workflowFinalized) {
     workflowFinalized = false;
@@ -375,6 +385,7 @@ function startAgent(name) {
 
 function endAgent(name) {
   if (!currentAgentSection || currentAgentSection.dataset.agent !== name) return;
+  flushDelta();
   const dot    = currentAgentSection.querySelector('.agent-dot');
   const status = currentAgentSection.querySelector('.agent-status');
   if (dot)    { dot.classList.remove('badge-active'); dot.classList.add('opacity-0'); }
@@ -398,7 +409,8 @@ function _finalizeSectionContent(name) {
   if (contentEl && !contentEl.dataset.finalized) {
     contentEl.dataset.finalized = '1';
     contentEl.classList.remove('streaming-cursor');
-    const raw = agentRawContent[name] || '';
+    const raw = (agentRawContent[name] || '')
+      .replace(/<think>[\s\S]*?(<\/think>|$)/g, '').trim();
     if (raw) {
       contentEl.innerHTML = marked.parse(raw);
       contentEl.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
@@ -522,6 +534,48 @@ function toggleTools(el) {
 }
 
 // ── Content streaming ─────────────────────────────────────────────────────────
+// Models like qwen3 emit <think>…</think> inline in the content stream.
+// Route those segments to the Thinking section instead of the visible output.
+const THINK_OPEN  = '<think>';
+const THINK_CLOSE = '</think>';
+let thinkMode = false;
+let thinkBuf  = '';
+
+function _tagPrefixLen(s, tag) {
+  const max = Math.min(s.length, tag.length - 1);
+  for (let k = max; k > 0; k--) {
+    if (tag.startsWith(s.slice(s.length - k))) return k;
+  }
+  return 0;
+}
+
+function processDelta(text) {
+  thinkBuf += text;
+  while (true) {
+    const tag = thinkMode ? THINK_CLOSE : THINK_OPEN;
+    const out = thinkMode ? appendReasoning : appendContent;
+    const idx = thinkBuf.indexOf(tag);
+    if (idx !== -1) {
+      if (idx > 0) out(thinkBuf.slice(0, idx));
+      thinkBuf  = thinkBuf.slice(idx + tag.length);
+      thinkMode = !thinkMode;
+      continue;
+    }
+    // Flush everything except a possible partial tag at the end of the buffer
+    const keep  = _tagPrefixLen(thinkBuf, tag);
+    const flush = thinkBuf.slice(0, thinkBuf.length - keep);
+    if (flush) out(flush);
+    thinkBuf = keep ? thinkBuf.slice(thinkBuf.length - keep) : '';
+    return;
+  }
+}
+
+function flushDelta() {
+  if (thinkBuf) (thinkMode ? appendReasoning : appendContent)(thinkBuf);
+  thinkBuf  = '';
+  thinkMode = false;
+}
+
 function appendContent(text) {
   if (!currentAgentName || !curContentEl) return;
   agentRawContent[currentAgentName] = (agentRawContent[currentAgentName] || '') + text;
@@ -620,7 +674,7 @@ function handleEvent(type, data) {
     case 'message': {
       const delta = data.delta || {};
       if (delta.reasoning_content) appendReasoning(delta.reasoning_content);
-      if (delta.content)           appendContent(delta.content);
+      if (delta.content)           processDelta(delta.content);
       break;
     }
 
@@ -668,6 +722,8 @@ async function handleSend() {
   currentAgentSection = null;
   agentRawContent     = {};
   agentThinkRaw       = {};
+  thinkMode           = false;
+  thinkBuf            = '';
   curBlock = curAgentsContainer = curContentEl = curToolsEl = curThinkEl = curThinkBody = null;
 
   messages.push({ role: 'user', content: text });
@@ -696,6 +752,8 @@ function newChat() {
   currentAgentSection = null;
   agentRawContent     = {};
   agentThinkRaw       = {};
+  thinkMode           = false;
+  thinkBuf            = '';
   curBlock = curAgentsContainer = curContentEl = curToolsEl = curThinkEl = curThinkBody = null;
 
   messagesEl.innerHTML = `
@@ -711,26 +769,10 @@ function newChat() {
       </div>
       <h1 class="text-2xl font-bold text-white mb-2">What can I help you with?</h1>
       <p class="text-gray-500 text-sm mb-8">Multi-agent AI — research, code, browse, and report</p>
-      <div class="grid grid-cols-2 gap-3 text-left">
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">📊 Compare populations</div>
-          <div class="text-xs text-gray-500">Compare the populations of Tokyo and New York with latest data</div>
-        </button>
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">📈 Stock analysis</div>
-          <div class="text-xs text-gray-500">Analyze NVIDIA's stock performance over the last 3 months</div>
-        </button>
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">🔬 Research topic</div>
-          <div class="text-xs text-gray-500">Research the latest developments in quantum computing in 2025</div>
-        </button>
-        <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
-          <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">🐍 Write & run code</div>
-          <div class="text-xs text-gray-500">Write a Python script to generate a Fibonacci sequence up to 1000</div>
-        </button>
-      </div>
+      <div class="example-grid grid grid-cols-2 gap-3 text-left"></div>
     </div>
   `;
+  renderExamples();
 }
 
 function useExample(btn) {
@@ -738,6 +780,8 @@ function useExample(btn) {
   $('userInput').value = desc;
   $('userInput').focus();
 }
+
+renderExamples();
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 $('userInput').addEventListener('keydown', e => {

@@ -4,10 +4,12 @@ FastAPI application for LangManus.
 
 import json
 import logging
+from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 import asyncio
@@ -38,6 +40,16 @@ app.add_middleware(
 
 # Create the graph
 graph = build_graph()
+
+# Serve the bundled web UI at the root URL
+WEB_UI_INDEX = Path(__file__).resolve().parents[2] / "web_ui" / "index.html"
+
+
+@app.get("/", include_in_schema=False)
+async def serve_web_ui():
+    if WEB_UI_INDEX.exists():
+        return FileResponse(WEB_UI_INDEX)
+    raise HTTPException(status_code=404, detail="web_ui/index.html not found")
 
 
 class ContentItem(BaseModel):
