@@ -18,3 +18,4 @@ agent_history.gif
 *.ipynb
 misc/
 misc/*
+.vscode
