@@ -1,5 +1,6 @@
 import logging
 import json
+import time
 from copy import deepcopy
 from typing import Literal
 from langchain_core.messages import HumanMessage
@@ -12,7 +13,7 @@ from src.config import TEAM_MEMBERS
 from src.config.agents import AGENT_LLM_MAP
 from src.prompts.template import apply_prompt_template
 from src.tools.search import tavily_tool
-from .types import State, Router
+from .types import State, Router, Plan
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ RESPONSE_FORMAT = "Response from {}:\n\n<response>\n{}\n</response>\n\n*Please e
 def research_node(state: State) -> Command[Literal["supervisor"]]:
     """Node for the researcher agent that performs research tasks."""
     logger.info("Research agent starting task")
+    time.sleep(20)
     result = research_agent.invoke(state)
     logger.info("Research agent completed task")
     logger.debug(f"Research agent response: {result['messages'][-1].content}")
@@ -43,6 +45,7 @@ def research_node(state: State) -> Command[Literal["supervisor"]]:
 def code_node(state: State) -> Command[Literal["supervisor"]]:
     """Node for the coder agent that executes Python code."""
     logger.info("Code agent starting task")
+    time.sleep(20)
     result = coder_agent.invoke(state)
     logger.info("Code agent completed task")
     logger.debug(f"Code agent response: {result['messages'][-1].content}")
@@ -85,12 +88,26 @@ def browser_node(state: State) -> Command[Literal["supervisor"]]:
 def supervisor_node(state: State) -> Command[Literal[*TEAM_MEMBERS, "__end__"]]:
     """Supervisor node that decides which agent should act next."""
     logger.info("Supervisor evaluating next action")
+    # Brief pause so the TPM bucket has room before each supervisor call
+    time.sleep(20)
     messages = apply_prompt_template("supervisor", state)
-    response = (
-        get_llm_by_type(AGENT_LLM_MAP["supervisor"])
-        .with_structured_output(Router)
-        .invoke(messages)
+
+    llm = get_llm_by_type(AGENT_LLM_MAP["supervisor"]).with_structured_output(
+        Router, method="function_calling"
     )
+    response = None
+    for attempt in range(3):
+        try:
+            response = llm.invoke(messages)
+            break
+        except Exception as e:
+            if attempt < 2:
+                wait = 20 * (attempt + 1)
+                logger.warning(f"Supervisor call failed ({e}), retrying in {wait}s…")
+                time.sleep(wait)
+            else:
+                raise
+
     goto = response["next"]
     logger.debug(f"Current state messages: {state['messages']}")
     logger.debug(f"Supervisor response: {response}")
@@ -107,6 +124,7 @@ def supervisor_node(state: State) -> Command[Literal[*TEAM_MEMBERS, "__end__"]]:
 def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
     """Planner node that generate the full plan."""
     logger.info("Planner generating full plan")
+    time.sleep(20)
     messages = apply_prompt_template("planner", state)
     # whether to enable deep thinking mode
     llm = get_llm_by_type("basic")
@@ -115,41 +133,38 @@ def planner_node(state: State) -> Command[Literal["supervisor", "__end__"]]:
     if state.get("search_before_planning"):
         searched_content = tavily_tool.invoke({"query": state["messages"][-1].content})
         messages = deepcopy(messages)
-        messages[
-            -1
-        ].content += f"\n\n# Relative Search Results\n\n{json.dumps([{'titile': elem['title'], 'content': elem['content']} for elem in searched_content], ensure_ascii=False)}"
-    stream = llm.stream(messages)
-    full_response = ""
-    for chunk in stream:
-        full_response += chunk.content
-    logger.debug(f"Current state messages: {state['messages']}")
-    logger.debug(f"Planner response: {full_response}")
-
-    if full_response.startswith("```json"):
-        full_response = full_response.removeprefix("```json")
-
-    if full_response.endswith("```"):
-        full_response = full_response.removesuffix("```")
-
-    goto = "supervisor"
-    try:
-        json.loads(full_response)
-    except json.JSONDecodeError:
-        logger.warning("Planner response is not a valid JSON")
-        goto = "__end__"
+        # searched_content may be a string or a list of dicts depending on langchain version
+        if isinstance(searched_content, str):
+            search_text = searched_content
+        elif isinstance(searched_content, list):
+            items = []
+            for elem in searched_content:
+                if isinstance(elem, dict):
+                    items.append({"title": elem.get("title", ""), "content": elem.get("content", "")})
+                else:
+                    items.append({"title": "", "content": str(elem)})
+            search_text = json.dumps(items, ensure_ascii=False)
+        else:
+            search_text = str(searched_content)
+        messages[-1].content += f"\n\n# Relative Search Results\n\n{search_text}"
+    structured_llm = llm.with_structured_output(Plan, method="function_calling")
+    plan: Plan = structured_llm.invoke(messages)
+    full_response = plan.model_dump_json(indent=2)
+    logger.debug(f"Planner structured plan: {full_response}")
 
     return Command(
         update={
             "messages": [HumanMessage(content=full_response, name="planner")],
             "full_plan": full_response,
         },
-        goto=goto,
+        goto="supervisor",
     )
 
 
 def coordinator_node(state: State) -> Command[Literal["planner", "__end__"]]:
     """Coordinator node that communicate with customers."""
     logger.info("Coordinator talking.")
+    time.sleep(20)
     messages = apply_prompt_template("coordinator", state)
     response = get_llm_by_type(AGENT_LLM_MAP["coordinator"]).invoke(messages)
     logger.debug(f"Current state messages: {state['messages']}")
@@ -167,6 +182,7 @@ def coordinator_node(state: State) -> Command[Literal["planner", "__end__"]]:
 def reporter_node(state: State) -> Command[Literal["supervisor"]]:
     """Reporter node that write a final report."""
     logger.info("Reporter write final report")
+    time.sleep(20)
     messages = apply_prompt_template("reporter", state)
     response = get_llm_by_type(AGENT_LLM_MAP["reporter"]).invoke(messages)
     logger.debug(f"Current state messages: {state['messages']}")

@@ -1,8 +1,9 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (.env wins over stale values inherited from the
+# parent process, e.g. across uvicorn --reload restarts)
+load_dotenv(override=True)
 
 # Reasoning LLM configuration (for complex reasoning tasks)
 REASONING_MODEL = os.getenv("REASONING_MODEL", "o1-mini")

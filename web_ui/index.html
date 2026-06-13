@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LangManus</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class' }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js"></script>
+  <style>
+    :root {
+      --brand: #818cf8;
+      --brand-dim: #4f46e5;
+    }
+    html, body { height: 100%; }
+    body { background: #0f1117; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+
+    /* Markdown output */
+    .md-content h1, .md-content h2, .md-content h3 { font-weight: 700; margin: 1em 0 0.4em; line-height: 1.3; }
+    .md-content h1 { font-size: 1.35em; color: #e2e8f0; }
+    .md-content h2 { font-size: 1.15em; color: #cbd5e1; border-bottom: 1px solid #1e293b; padding-bottom: 0.3em; }
+    .md-content h3 { font-size: 1.05em; color: #94a3b8; }
+    .md-content p  { margin: 0.6em 0; line-height: 1.75; color: #cbd5e1; }
+    .md-content ul, .md-content ol { margin: 0.5em 0 0.5em 1.4em; color: #cbd5e1; }
+    .md-content ul { list-style: disc; }
+    .md-content ol { list-style: decimal; }
+    .md-content li { margin: 0.2em 0; line-height: 1.6; }
+    .md-content strong { color: #e2e8f0; }
+    .md-content a { color: var(--brand); text-decoration: underline; }
+    .md-content code:not(pre code) {
+      background: #1e293b; color: #7dd3fc; padding: 1px 6px;
+      border-radius: 4px; font-size: 0.85em; font-family: monospace;
+    }
+    .md-content pre {
+      background: #0d1117; border: 1px solid #1e293b; border-radius: 8px;
+      padding: 1em; margin: 0.8em 0; overflow-x: auto;
+    }
+    .md-content pre code { font-size: 0.82em; background: transparent; padding: 0; color: inherit; }
+    .md-content blockquote {
+      border-left: 3px solid var(--brand-dim); padding-left: 1em;
+      margin: 0.5em 0; color: #94a3b8; font-style: italic;
+    }
+    .md-content table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 0.9em; }
+    .md-content th { background: #1e293b; padding: 8px 12px; text-align: left; border: 1px solid #334155; }
+    .md-content td { padding: 6px 12px; border: 1px solid #1e293b; }
+    .md-content tr:nth-child(even) { background: #0f172a; }
+
+    /* Thinking pulse */
+    .thinking-dot { animation: blink 1.1s steps(1) infinite; }
+    .thinking-dot:nth-child(2) { animation-delay: 0.35s; }
+    .thinking-dot:nth-child(3) { animation-delay: 0.7s; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    /* Active pulse dot */
+    .badge-active { animation: pulseDot 1.5s ease-in-out infinite; }
+    @keyframes pulseDot {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(129,140,248,0.5); }
+      50% { box-shadow: 0 0 0 4px rgba(129,140,248,0); }
+    }
+
+    /* Toggle */
+    .toggle-checkbox:checked + .toggle-label { background: var(--brand-dim); }
+    .toggle-checkbox:checked + .toggle-label .toggle-knob { transform: translateX(18px); }
+    .toggle-label { transition: background 0.2s; }
+    .toggle-knob { transition: transform 0.2s; }
+
+    /* Textarea auto-grow */
+    textarea { resize: none; field-sizing: content; max-height: 200px; }
+
+    /* Fade-in */
+    .fade-in { animation: fadeIn 0.25s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* Cursor blink for streaming */
+    .streaming-cursor::after {
+      content: '▋'; color: var(--brand); animation: cursorBlink 0.8s steps(1) infinite;
+    }
+    @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    .chev { transition: transform 0.2s ease; }
+    .nav-item.nav-done .nav-label { color: #6b7280; }
+  </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header class="flex items-center justify-between px-5 py-3 border-b border-gray-800 bg-gray-900/60 backdrop-blur-sm z-10 shrink-0">
+    <div class="flex items-center gap-2.5">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="13" stroke="#818cf8" stroke-width="1.5"/>
+        <path d="M8 14 L14 8 L20 14 L14 20 Z" fill="#818cf8" opacity="0.8"/>
+        <circle cx="14" cy="14" r="3" fill="#818cf8"/>
+      </svg>
+      <span class="font-semibold text-lg tracking-tight text-white">LangManus</span>
+    </div>
+    <button
+      onclick="newChat()"
+      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-700 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      New Chat
+    </button>
+  </header>
+
+  <!-- ── Messages ───────────────────────────────────────────── -->
+  <main id="messages" class="flex-1 overflow-y-auto px-4 py-6 space-y-8"></main>
+
+  <!-- ── Input area ─────────────────────────────────────────── -->
+  <footer class="shrink-0 border-t border-gray-800 bg-gray-900/60 backdrop-blur-sm px-4 pt-3 pb-4">
+    <div class="max-w-3xl mx-auto">
+
+      <!-- Toggles -->
+      <div class="flex items-center gap-5 mb-3 px-1">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <div class="relative">
+            <input id="deepThinking" type="checkbox" class="toggle-checkbox sr-only" />
+            <div class="toggle-label w-9 h-5 bg-gray-700 rounded-full relative cursor-pointer">
+              <div class="toggle-knob absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow"></div>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400">Deep Thinking</span>
+        </label>
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <div class="relative">
+            <input id="searchFirst" type="checkbox" class="toggle-checkbox sr-only" />
+            <div class="toggle-label w-9 h-5 bg-gray-700 rounded-full relative cursor-pointer">
+              <div class="toggle-knob absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow"></div>
+            </div>
+          </div>
+          <span class="text-xs text-gray-400">Search Before Planning</span>
+        </label>
+        <span id="statusBadge" class="ml-auto text-xs text-gray-600 hidden">
+          <span class="thinking-dot">●</span><span class="thinking-dot">●</span><span class="thinking-dot">●</span>
+          <span class="ml-1" id="statusText">Working…</span>
+        </span>
+      </div>
+
+      <!-- Textarea + Send -->
+      <div class="flex gap-2 items-end">
+        <div class="flex-1 relative">
+          <textarea
+            id="userInput"
+            placeholder="Ask anything… (Enter to send, Shift+Enter for newline)"
+            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 pr-12 text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/50 transition-colors leading-relaxed min-h-[48px]"
+            rows="1"
+          ></textarea>
+        </div>
+        <button
+          id="sendBtn"
+          onclick="handleSend()"
+          class="w-11 h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0"
+        >
+          <svg id="sendIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+          <svg id="stopIcon" width="16" height="16" viewBox="0 0 24 24" fill="white" class="hidden">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+          </svg>
+        </button>
+      </div>
+      <p class="text-center text-xs text-gray-700 mt-2">LangManus may make mistakes. Verify important information.</p>
+    </div>
+  </footer>
+
+<script>
+// ── Config ──────────────────────────────────────────────────────────────────
+// Use a relative URL when served by the API server itself; fall back to
+// localhost:8000 when the file is opened directly from disk.
+const API_URL = location.protocol.startsWith('http')
+  ? '/api/chat/stream'
+  : 'http://localhost:8000/api/chat/stream';
+
+const AGENT_META = {
+  coordinator: { label: 'Coordinator',     icon: '🧭', text: 'text-indigo-300'  },
+  planner:     { label: 'Planning',        icon: '📋', text: 'text-violet-300'  },
+  supervisor:  { label: 'Thinking',        icon: '👁️', text: 'text-blue-300'    },
+  researcher:  { label: 'Researching',     icon: '🔍', text: 'text-emerald-300' },
+  coder:       { label: 'Coding',          icon: '💻', text: 'text-amber-300'   },
+  browser:     { label: 'Browsing Web',    icon: '🌐', text: 'text-cyan-300'    },
+  file_manager:{ label: 'File Management', icon: '📁', text: 'text-orange-300'  },
+  reporter:    { label: 'Reporting',       icon: '📄', text: 'text-rose-300'    },
+};
+const metaFor = name => AGENT_META[name] || { label: name, icon: '🤖', text: 'text-gray-300' };
+
+const EXAMPLE_QUERIES = [
+  { icon: '📊', title: 'Compare populations', query: 'Compare the populations of Tokyo and New York with latest data' },
+  { icon: '📈', title: 'Stock analysis',      query: "Analyze NVIDIA's stock performance over the last 3 months" },
+  { icon: '🔬', title: 'Research topic',      query: 'Research the latest developments in quantum computing in 2025' },
+  { icon: '🐍', title: 'Write & run code',    query: 'Write a Python script to generate a Fibonacci sequence up to 1000' },
+  { icon: '🌐', title: 'Browse the web',      query: 'Use the browser to open news.ycombinator.com and summarize the top 5 stories' },
+  { icon: '🛒', title: 'Look up a product',   query: 'Use the browser to find the current price of the Raspberry Pi 5 on raspberrypi.com' },
+];
+
+// ── State ───────────────────────────────────────────────────────────────────
+let isRunning         = false;
+let abortCtrl         = null;
+let messages          = [];   // conversation history sent to the API
+let workflowFinalized = false;
+let turn              = null; // state for the current response turn
+
+marked.setOptions({ breaks: true, gfm: true });
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const messagesEl = $('messages');
+let scrollPending = false;
+
+function scrollBottom() {
+  messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: 'smooth' });
+}
+function throttledScroll() {
+  if (!scrollPending) {
+    scrollPending = true;
+    requestAnimationFrame(() => { scrollPending = false; scrollBottom(); });
+  }
+}
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function el(html) {
+  const t = document.createElement('template');
+  t.innerHTML = html.trim();
+  return t.content.firstElementChild;
+}
+function renderMarkdown(target, raw) {
+  target.innerHTML = marked.parse(raw);
+  target.querySelectorAll('pre code').forEach(c => hljs.highlightElement(c));
+}
+function setRunning(val) {
+  isRunning = val;
+  $('sendBtn').disabled = false;
+  $('userInput').disabled = val;
+  $('statusBadge').classList.toggle('hidden', !val);
+  $('sendIcon').classList.toggle('hidden', val);
+  $('stopIcon').classList.toggle('hidden', !val);
+}
+function setStatus(text) { $('statusText').textContent = text; }
+
+function hideWelcome() {
+  const w = $('welcome');
+  if (w) w.remove();
+}
+
+// ── Welcome screen ────────────────────────────────────────────────────────────
+function renderWelcome() {
+  messagesEl.innerHTML = `
+    <div id="welcome" class="max-w-2xl mx-auto text-center mt-16 fade-in">
+      <div class="flex justify-center mb-5">
+        <div class="w-16 h-16 rounded-2xl bg-indigo-900/40 border border-indigo-700/50 flex items-center justify-center">
+          <svg width="32" height="32" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="13" stroke="#818cf8" stroke-width="1.5"/>
+            <path d="M8 14 L14 8 L20 14 L14 20 Z" fill="#818cf8" opacity="0.8"/>
+            <circle cx="14" cy="14" r="3" fill="#818cf8"/>
+          </svg>
+        </div>
+      </div>
+      <h1 class="text-2xl font-bold text-white mb-2">What can I help you with?</h1>
+      <p class="text-gray-500 text-sm mb-8">Multi-agent AI — research, code, browse, and report</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+        ${EXAMPLE_QUERIES.map(ex => `
+          <button onclick="useExample(this)" class="example-btn p-4 rounded-xl border border-gray-800 bg-gray-900/60 hover:border-indigo-600 hover:bg-indigo-900/20 transition-all text-left group">
+            <div class="text-sm font-medium text-gray-200 mb-1 group-hover:text-indigo-300">${ex.icon} ${ex.title}</div>
+            <div class="text-xs text-gray-500">${escapeHtml(ex.query)}</div>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+function useExample(btn) {
+  $('userInput').value = btn.querySelector('.text-xs').textContent;
+  $('userInput').focus();
+}
+
+// ── Message blocks ────────────────────────────────────────────────────────────
+function addUserMessage(text) {
+  messagesEl.appendChild(el(`
+    <div class="max-w-3xl mx-auto flex justify-end fade-in">
+      <div class="max-w-[80%] bg-indigo-900/50 border border-indigo-800/50 rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-gray-100 leading-relaxed whitespace-pre-wrap">${escapeHtml(text)}</div>
+    </div>
+  `));
+  scrollBottom();
+}
+
+function newTurn(query) {
+  const wrap = el(`
+    <div class="max-w-3xl mx-auto fade-in">
+      <div class="flex items-start gap-3">
+        <div class="w-8 h-8 rounded-lg bg-indigo-900/60 border border-indigo-700/50 flex items-center justify-center shrink-0 mt-1">
+          <svg width="16" height="16" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="13" stroke="#818cf8" stroke-width="1.5"/>
+            <path d="M8 14 L14 8 L20 14 L14 20 Z" fill="#818cf8" opacity="0.8"/>
+            <circle cx="14" cy="14" r="3" fill="#818cf8"/>
+          </svg>
+        </div>
+        <div class="flex-1 min-w-0 turn-body space-y-4"></div>
+      </div>
+    </div>
+  `);
+  messagesEl.appendChild(wrap);
+  turn = {
+    query,
+    body: wrap.querySelector('.turn-body'),
+    card: null, nav: null, stepsPane: null,
+    steps: [],            // ordered list of step objects
+    current: null,        // active sink: {agent, append, appendThink, finalize}
+    coordEl: null, coordRaw: '',
+    reportPanel: null, reportContentEl: null, reportRaw: '', reportThink: null,
+    stepCount: 0,
+  };
+  scrollBottom();
+  return turn;
+}
+
+// ── Workflow card ─────────────────────────────────────────────────────────────
+function ensureCard() {
+  if (turn.card) return turn.card;
+  const card = el(`
+    <div class="workflow-card border border-gray-800 rounded-2xl overflow-hidden bg-gray-900/30 fade-in">
+      <div class="flex items-center gap-2.5 px-4 py-3 border-b border-gray-800 bg-gray-900/50">
+        <span class="text-base">⚡</span>
+        <span class="text-sm font-semibold text-gray-200 truncate flex-1">${escapeHtml(turn.query)}</span>
+        <span class="wf-status flex items-center gap-1.5 text-xs text-gray-500 shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 badge-active"></span> running
+        </span>
+      </div>
+      <div class="flex">
+        <aside class="wf-nav hidden sm:flex w-44 shrink-0 flex-col gap-0.5 border-r border-gray-800 bg-gray-900/40 px-2.5 py-3">
+          <div class="text-[11px] uppercase tracking-wider text-gray-600 px-1.5 pb-1.5">Flow</div>
+        </aside>
+        <main class="wf-steps flex-1 min-w-0 px-4 py-4 space-y-6"></main>
+      </div>
+    </div>
+  `);
+  turn.body.appendChild(card);
+  turn.card = card;
+  turn.nav = card.querySelector('.wf-nav');
+  turn.stepsPane = card.querySelector('.wf-steps');
+  return card;
+}
+
+function cardDone(failed) {
+  if (!turn || !turn.card) return;
+  const status = turn.card.querySelector('.wf-status');
+  if (status) {
+    status.innerHTML = failed
+      ? '<span class="text-red-400">✕ failed</span>'
+      : '<span class="text-emerald-400">✓ completed</span>';
+  }
+}
+
+// ── Steps ─────────────────────────────────────────────────────────────────────
+function navAdd(stepId, label) {
+  const item = el(`
+    <button class="nav-item flex items-center gap-2 px-1.5 py-1.5 rounded-lg text-xs text-gray-300 hover:bg-gray-800/60 transition-colors text-left w-full">
+      <span class="nav-dot w-1.5 h-1.5 rounded-full bg-indigo-400 badge-active shrink-0"></span>
+      <span class="nav-label truncate">${escapeHtml(label)}</span>
+    </button>
+  `);
+  item.addEventListener('click', () => {
+    const s = document.getElementById(stepId);
+    if (s) s.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  turn.nav.appendChild(item);
+  return item;
+}
+function navDone(item) {
+  if (!item) return;
+  item.classList.add('nav-done');
+  const dot = item.querySelector('.nav-dot');
+  if (dot) dot.outerHTML = '<span class="text-emerald-400 text-[10px] leading-none shrink-0">✓</span>';
+}
+
+function makeThinkSection() {
+  const section = el(`
+    <div class="think-section hidden">
+      <button class="think-toggle flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="chev think-chevron">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+        <span class="think-label">🧠 Deep Thought</span>
+      </button>
+      <div class="think-body hidden mt-2 p-3 rounded-lg bg-gray-900 border-l-2 border-gray-700 text-xs text-gray-500 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap"></div>
+    </div>
+  `);
+  const btn = section.querySelector('.think-toggle');
+  btn.addEventListener('click', () => {
+    const body = section.querySelector('.think-body');
+    const chev = section.querySelector('.think-chevron');
+    const open = !body.classList.contains('hidden');
+    body.classList.toggle('hidden', open);
+    chev.style.transform = open ? '' : 'rotate(180deg)';
+  });
+  return section;
+}
+
+function addStep(agentName, agentId) {
+  ensureCard();
+  const meta = metaFor(agentName);
+  turn.stepCount += 1;
+  const stepId = `step-${agentId}`;
+  const section = el(`
+    <section class="wf-step scroll-mt-4" id="${stepId}">
+      <h3 class="flex items-center gap-2 text-sm font-bold ${meta.text}">
+        <span>📍</span>
+        <span>Step ${turn.stepCount} · ${meta.label}</span>
+        <span class="step-dot w-1.5 h-1.5 rounded-full bg-indigo-400 badge-active"></span>
+      </h3>
+      <div class="step-body mt-2.5 space-y-2.5">
+        <div class="tools-area space-y-1.5"></div>
+        <div class="content-area md-content text-sm text-gray-400 streaming-cursor"></div>
+      </div>
+    </section>
+  `);
+  const thinkSection = makeThinkSection();
+  section.querySelector('.step-body').prepend(thinkSection);
+  turn.stepsPane.appendChild(section);
+
+  const step = {
+    agent: agentName,
+    el: section,
+    navItem: navAdd(stepId, meta.label),
+    contentEl: section.querySelector('.content-area'),
+    toolsEl: section.querySelector('.tools-area'),
+    thinkSection,
+    thinkBody: thinkSection.querySelector('.think-body'),
+    raw: '', thinkRaw: '', toolCount: 0,
+
+    append(text) {
+      this.raw += text;
+      this.contentEl.textContent = this.raw;
+      throttledScroll();
+    },
+    appendThink(text) {
+      this.thinkRaw += text;
+      this.thinkSection.classList.remove('hidden');
+      this.thinkBody.textContent = this.thinkRaw;
+      if (this.thinkBody.classList.contains('hidden')) {
+        this.thinkBody.classList.remove('hidden');
+        this.thinkSection.querySelector('.think-chevron').style.transform = 'rotate(180deg)';
+      }
+      throttledScroll();
+    },
+    finalize() {
+      this.contentEl.classList.remove('streaming-cursor');
+      const dot = this.el.querySelector('.step-dot');
+      if (dot) dot.outerHTML = '<span class="text-emerald-400 text-xs leading-none">✓</span>';
+      navDone(this.navItem);
+      if (this.agent === 'planner') {
+        renderPlan(this);
+      } else if (this.raw.trim()) {
+        renderMarkdown(this.contentEl, this.raw);
+      } else if (!this.toolCount) {
+        this.contentEl.innerHTML = '<span class="text-xs text-gray-600 italic">no output</span>';
+      }
+      // Collapse the thought once the step is done
+      if (this.thinkRaw) {
+        this.thinkBody.classList.add('hidden');
+        this.thinkSection.querySelector('.think-chevron').style.transform = '';
+        this.thinkSection.querySelector('.think-label').textContent =
+          `🧠 Deep Thought (${this.thinkRaw.length} chars)`;
+      }
+    },
+  };
+  turn.steps.push(step);
+  scrollBottom();
+  return step;
+}
+
+// ── Plan rendering (planner step) ─────────────────────────────────────────────
+function renderPlan(step) {
+  let plan = null;
+  try { plan = JSON.parse(step.raw); } catch { /* not JSON — fall back */ }
+  if (!plan || (!plan.title && !plan.steps)) {
+    if (step.raw.trim()) renderMarkdown(step.contentEl, '```json\n' + step.raw + '\n```');
+    else step.contentEl.innerHTML = '<span class="text-xs text-gray-600 italic">no plan produced</span>';
+    return;
+  }
+  const stepsHtml = (plan.steps || []).map((s, i) => `
+    <li class="flex gap-3">
+      <span class="w-5 h-5 rounded-full bg-violet-900/60 border border-violet-700/50 text-violet-300 text-[11px] flex items-center justify-center shrink-0 mt-0.5">${i + 1}</span>
+      <div class="min-w-0">
+        <div class="text-xs font-semibold text-gray-200">
+          ${escapeHtml(s.title || '')}
+          ${s.agent_name ? `<span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-gray-800 text-[10px] font-normal text-gray-400">${metaFor(s.agent_name).icon} ${escapeHtml(s.agent_name)}</span>` : ''}
+        </div>
+        ${s.description ? `<div class="text-xs text-gray-500 mt-0.5 leading-relaxed">${escapeHtml(s.description)}</div>` : ''}
+        ${s.note ? `<div class="text-[11px] text-gray-600 italic mt-0.5">Note: ${escapeHtml(s.note)}</div>` : ''}
+      </div>
+    </li>
+  `).join('');
+  step.contentEl.innerHTML = `
+    <div class="border border-violet-900/40 rounded-xl bg-violet-950/20 p-4">
+      ${plan.title ? `<div class="text-sm font-bold text-violet-200 mb-1.5">${escapeHtml(plan.title)}</div>` : ''}
+      ${plan.thought ? `<p class="text-xs text-gray-500 italic mb-3 leading-relaxed">${escapeHtml(plan.thought)}</p>` : ''}
+      <ol class="space-y-2.5">${stepsHtml}</ol>
+    </div>
+  `;
+}
+
+// ── Tool call views ───────────────────────────────────────────────────────────
+const toolCalls = {};   // tool_call_id → {card, resultEl, toolName}
+
+function toolHeaderHtml(icon, html) {
+  return `
+    <div class="tool-header flex items-center justify-between gap-2 px-3 py-2 bg-gray-900 cursor-pointer hover:bg-gray-800/70 transition-colors">
+      <div class="flex items-center gap-2 min-w-0 text-xs text-gray-300">
+        <span class="shrink-0">${icon}</span>
+        <span class="truncate">${html}</span>
+      </div>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="chev tool-chevron text-gray-600 shrink-0">
+        <polyline points="6 9 12 15 18 9"/>
+      </svg>
+    </div>
+  `;
+}
+
+function buildToolCard(name, input) {
+  const get = k => (input && typeof input === 'object') ? input[k] : undefined;
+  let header, bodyHtml = '';
+
+  if (name === 'tavily_search') {
+    header = toolHeaderHtml('🔍', `Searching for <b class="text-gray-100">&ldquo;${escapeHtml(get('query') ?? JSON.stringify(input))}&rdquo;</b>`);
+  } else if (name === 'crawl_tool') {
+    const url = get('url') ?? '';
+    header = toolHeaderHtml('📄', `Reading <a class="text-indigo-300 underline" href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>`);
+  } else if (name === 'browser') {
+    header = toolHeaderHtml('🌐', escapeHtml(get('instruction') ?? JSON.stringify(input)));
+  } else if (name === 'python_repl_tool') {
+    header = toolHeaderHtml('🐍', 'Executing Python code');
+    bodyHtml = `<div class="px-3 py-2 border-t border-gray-800 bg-gray-950"><pre class="overflow-x-auto"><code class="language-python text-xs">${escapeHtml(get('code') ?? '')}</code></pre></div>`;
+  } else if (name === 'bash_tool') {
+    header = toolHeaderHtml('💻', 'Running shell command');
+    bodyHtml = `<div class="px-3 py-2 border-t border-gray-800 bg-gray-950"><pre class="overflow-x-auto"><code class="language-bash text-xs">${escapeHtml(get('cmd') ?? '')}</code></pre></div>`;
+  } else {
+    header = toolHeaderHtml('🔧', `<code class="text-amber-300">${escapeHtml(name)}</code>`);
+    bodyHtml = `<div class="px-3 py-2 border-t border-gray-800 bg-gray-950"><pre class="text-gray-400 text-xs whitespace-pre-wrap break-all">${escapeHtml(typeof input === 'object' ? JSON.stringify(input, null, 2) : String(input ?? ''))}</pre></div>`;
+  }
+
+  const card = el(`
+    <div class="tool-card rounded-lg border border-gray-800 overflow-hidden text-xs">
+      ${header}
+      <div class="tool-body ${bodyHtml ? '' : 'hidden'}">
+        ${bodyHtml}
+        <div class="tool-result hidden px-3 py-2 border-t border-gray-800 bg-gray-950">
+          <p class="text-gray-600 uppercase tracking-wide text-[10px] mb-1">Result</p>
+          <div class="result-slot text-gray-400 text-xs"></div>
+        </div>
+      </div>
+    </div>
+  `);
+  card.querySelectorAll('pre code').forEach(c => hljs.highlightElement(c));
+  card.querySelector('.tool-header').addEventListener('click', () => {
+    const body = card.querySelector('.tool-body');
+    const chev = card.querySelector('.tool-chevron');
+    const open = !body.classList.contains('hidden');
+    body.classList.toggle('hidden', open);
+    chev.style.transform = open ? '' : 'rotate(180deg)';
+  });
+  if (bodyHtml) card.querySelector('.tool-chevron').style.transform = 'rotate(180deg)';
+  return card;
+}
+
+function addToolCall(id, name, input) {
+  const step = turn && turn.current && turn.current.toolsEl ? turn.current : null;
+  if (!step) return;
+  const card = buildToolCard(name, input);
+  step.toolsEl.appendChild(card);
+  step.toolCount += 1;
+  toolCalls[id] = { card, toolName: name };
+  scrollBottom();
+}
+
+function setToolResult(id, result) {
+  const tc = toolCalls[id];
+  if (!tc) return;
+  const body = tc.card.querySelector('.tool-body');
+  const resultSection = tc.card.querySelector('.tool-result');
+  const slot = tc.card.querySelector('.result-slot');
+  resultSection.classList.remove('hidden');
+  body.classList.remove('hidden');
+  tc.card.querySelector('.tool-chevron').style.transform = 'rotate(180deg)';
+
+  // Search results render as a link list when parseable
+  if (tc.toolName === 'tavily_search') {
+    let items = null;
+    try { items = JSON.parse(result); } catch { /* keep raw */ }
+    if (Array.isArray(items) && items.length && typeof items[0] === 'object') {
+      slot.innerHTML = items.slice(0, 8).map(r => `
+        <div class="py-1">
+          <a class="text-indigo-300 underline" href="${escapeHtml(r.url ?? '#')}" target="_blank" rel="noopener">${escapeHtml(r.title ?? r.url ?? 'result')}</a>
+          ${r.content ? `<div class="text-gray-600 text-[11px] mt-0.5">${escapeHtml(String(r.content).slice(0, 160))}…</div>` : ''}
+        </div>
+      `).join('');
+      return;
+    }
+  }
+  const text = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
+  const truncated = text.length > 1200 ? text.slice(0, 1200) + '\n… (truncated)' : text;
+  slot.innerHTML = `<pre class="whitespace-pre-wrap break-all max-h-40 overflow-y-auto">${escapeHtml(truncated)}</pre>`;
+}
+
+// ── Coordinator bubble & final report ────────────────────────────────────────
+function coordinatorSink() {
+  return {
+    agent: 'coordinator',
+    toolsEl: null, toolCount: 0,
+    append(text) {
+      turn.coordRaw += text;
+      if (!turn.coordEl) {
+        turn.coordEl = el(`<div class="md-content text-sm leading-relaxed"></div>`);
+        turn.body.appendChild(turn.coordEl);
+      }
+      turn.coordEl.textContent = turn.coordRaw;
+      throttledScroll();
+    },
+    appendThink() { /* coordinator reasoning is internal — not shown */ },
+    finalize() {
+      if (turn.coordEl && turn.coordRaw.trim()) renderMarkdown(turn.coordEl, turn.coordRaw);
+    },
+  };
+}
+
+function reporterSink(agentId) {
+  ensureCard();
+  const navItem = navAdd(`report-${agentId}`, 'Reporting');
+  const panel = el(`
+    <div id="report-${agentId}" class="border border-indigo-900/60 rounded-2xl bg-gray-900/40 overflow-hidden fade-in">
+      <div class="flex items-center gap-2 px-5 py-3 border-b border-gray-800 bg-gray-900/60">
+        <span>📄</span>
+        <span class="text-sm font-semibold text-gray-200 flex-1">Final Report</span>
+        <button class="copy-btn text-xs text-gray-500 hover:text-gray-200 transition-colors px-2 py-1 rounded-md hover:bg-gray-800" title="Copy report">⧉ Copy</button>
+      </div>
+      <div class="px-5 py-4">
+        <div class="report-think"></div>
+        <div class="report-content md-content text-sm streaming-cursor"></div>
+      </div>
+    </div>
+  `);
+  const thinkSection = makeThinkSection();
+  panel.querySelector('.report-think').appendChild(thinkSection);
+  turn.body.appendChild(panel);
+  turn.reportPanel = panel;
+  turn.reportContentEl = panel.querySelector('.report-content');
+  panel.querySelector('.copy-btn').addEventListener('click', function () {
+    navigator.clipboard.writeText(turn.reportRaw).then(() => {
+      this.textContent = '✓ Copied';
+      setTimeout(() => { this.textContent = '⧉ Copy'; }, 1500);
+    });
+  });
+  scrollBottom();
+
+  return {
+    agent: 'reporter',
+    toolsEl: null, toolCount: 0,
+    navItem,
+    thinkSection,
+    thinkBody: thinkSection.querySelector('.think-body'),
+    thinkRaw: '',
+    append(text) {
+      turn.reportRaw += text;
+      turn.reportContentEl.textContent = turn.reportRaw;
+      throttledScroll();
+    },
+    appendThink(text) {
+      this.thinkRaw += text;
+      this.thinkSection.classList.remove('hidden');
+      this.thinkBody.textContent = this.thinkRaw;
+      if (this.thinkBody.classList.contains('hidden')) {
+        this.thinkBody.classList.remove('hidden');
+        this.thinkSection.querySelector('.think-chevron').style.transform = 'rotate(180deg)';
+      }
+      throttledScroll();
+    },
+    finalize() {
+      turn.reportContentEl.classList.remove('streaming-cursor');
+      if (turn.reportRaw.trim()) renderMarkdown(turn.reportContentEl, turn.reportRaw);
+      navDone(navItem);
+      if (this.thinkRaw) {
+        this.thinkBody.classList.add('hidden');
+        this.thinkSection.querySelector('.think-chevron').style.transform = '';
+        this.thinkSection.querySelector('.think-label').textContent =
+          `🧠 Deep Thought (${this.thinkRaw.length} chars)`;
+        this.thinkSection.classList.add('mb-3');
+      }
+    },
+  };
+}
+
+function showError(message) {
+  if (!turn) return;
+  turn.body.appendChild(el(`
+    <div class="border border-red-900/60 rounded-xl bg-red-950/30 px-4 py-3 text-sm text-red-300 fade-in">
+      ⚠️ <b>Workflow failed:</b> ${escapeHtml(message)}
+    </div>
+  `));
+  cardDone(true);
+  scrollBottom();
+}
+
+// ── <think> tag stream routing ────────────────────────────────────────────────
+// Models like qwen3 emit <think>…</think> inline in the content stream.
+// Route those segments to the Deep Thought section instead of visible output.
+const THINK_OPEN  = '<think>';
+const THINK_CLOSE = '</think>';
+let thinkMode = false;
+let thinkBuf  = '';
+
+function _tagPrefixLen(s, tag) {
+  const max = Math.min(s.length, tag.length - 1);
+  for (let k = max; k > 0; k--) {
+    if (tag.startsWith(s.slice(s.length - k))) return k;
+  }
+  return 0;
+}
+
+function processDelta(text) {
+  if (!turn || !turn.current) return;
+  thinkBuf += text;
+  while (true) {
+    const tag = thinkMode ? THINK_CLOSE : THINK_OPEN;
+    const sink = turn.current;
+    const out = thinkMode ? sink.appendThink.bind(sink) : sink.append.bind(sink);
+    const idx = thinkBuf.indexOf(tag);
+    if (idx !== -1) {
+      if (idx > 0) out(thinkBuf.slice(0, idx));
+      thinkBuf  = thinkBuf.slice(idx + tag.length);
+      thinkMode = !thinkMode;
+      continue;
+    }
+    const keep  = _tagPrefixLen(thinkBuf, tag);
+    const flush = thinkBuf.slice(0, thinkBuf.length - keep);
+    if (flush) out(flush);
+    thinkBuf = keep ? thinkBuf.slice(thinkBuf.length - keep) : '';
+    return;
+  }
+}
+
+function flushDelta() {
+  if (thinkBuf && turn && turn.current) {
+    const sink = turn.current;
+    (thinkMode ? sink.appendThink.bind(sink) : sink.append.bind(sink))(thinkBuf);
+  }
+  thinkBuf  = '';
+  thinkMode = false;
+}
+
+// ── Event handling ────────────────────────────────────────────────────────────
+function handleEvent(type, data) {
+  switch (type) {
+    case 'start_of_workflow':
+      ensureCard();
+      setStatus('Planning…');
+      break;
+
+    case 'start_of_agent': {
+      flushDelta();
+      if (turn.current && turn.current.finalize && turn.current.agent !== data.agent_name) {
+        // finalize is idempotent only for steps that haven't ended; guard below
+      }
+      const name = data.agent_name;
+      const meta = metaFor(name);
+      if (name === 'coordinator') {
+        turn.current = coordinatorSink();
+      } else if (name === 'reporter') {
+        turn.current = reporterSink(data.agent_id);
+      } else {
+        turn.current = addStep(name, data.agent_id);
+      }
+      setStatus(`${meta.icon} ${meta.label}…`);
+      break;
+    }
+
+    case 'end_of_agent':
+      flushDelta();
+      if (turn.current && turn.current.agent === data.agent_name) {
+        turn.current.finalize();
+        turn.current = null;
+      }
+      setStatus('Working…');
+      break;
+
+    case 'message': {
+      const delta = data.delta || {};
+      if (delta.reasoning_content && turn.current) turn.current.appendThink(delta.reasoning_content);
+      if (delta.content) processDelta(delta.content);
+      break;
+    }
+
+    case 'tool_call':
+      addToolCall(data.tool_call_id, data.tool_name, data.tool_input);
+      break;
+
+    case 'tool_call_result':
+      setToolResult(data.tool_call_id, data.tool_result);
+      break;
+
+    case 'error':
+      showError(data.message || 'unknown error');
+      break;
+
+    case 'end_of_workflow':
+      finishTurn();
+      break;
+  }
+}
+
+function finishTurn(aborted) {
+  if (workflowFinalized) return;
+  workflowFinalized = true;
+  flushDelta();
+  if (turn && turn.current) { turn.current.finalize(); turn.current = null; }
+  if (turn) {
+    cardDone(false);
+    if (turn.card && !turn.reportPanel && !aborted) {
+      // Workflow ran but produced no report (e.g. failed midway)
+    }
+    const assistantText = turn.reportRaw || turn.coordRaw || '';
+    if (assistantText) messages.push({ role: 'assistant', content: assistantText });
+  }
+  setRunning(false);
+  scrollBottom();
+}
+
+// ── SSE streaming ─────────────────────────────────────────────────────────────
+async function streamWorkflow() {
+  abortCtrl = new AbortController();
+  let response;
+  try {
+    response = await fetch(API_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal:  abortCtrl.signal,
+      body: JSON.stringify({
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        debug: false,
+        deep_thinking_mode: $('deepThinking').checked,
+        search_before_planning: $('searchFirst').checked,
+      }),
+    });
+  } catch (err) {
+    if (err.name !== 'AbortError') showError(`Connection failed: ${err.message}`);
+    return;
+  }
+
+  if (!response.ok) {
+    showError(`Server error ${response.status}`);
+    return;
+  }
+
+  const reader  = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer    = '';
+
+  while (true) {
+    let chunk;
+    try { chunk = await reader.read(); } catch { break; }
+    const { done, value } = chunk;
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop();
+
+    for (const part of parts) {
+      let etype = '', edata = '';
+      for (const line of part.split('\n')) {
+        if (line.startsWith('event:')) etype = line.slice(6).trim();
+        else if (line.startsWith('data:')) edata = line.slice(5).trim();
+      }
+      if (!etype || !edata) continue;
+      let parsed;
+      try { parsed = JSON.parse(edata); } catch { continue; }
+      try { handleEvent(etype, parsed); } catch (e) { console.error('event handling error', e); }
+    }
+  }
+}
+
+// ── Send / Stop / New chat ────────────────────────────────────────────────────
+async function handleSend() {
+  if (isRunning) {
+    abortCtrl?.abort();
+    finishTurn(true);
+    return;
+  }
+
+  const input = $('userInput');
+  const text  = input.value.trim();
+  if (!text) return;
+
+  hideWelcome();
+  input.value = '';
+
+  workflowFinalized = false;
+  thinkMode = false;
+  thinkBuf  = '';
+
+  messages.push({ role: 'user', content: text });
+  addUserMessage(text);
+  newTurn(text);
+  setRunning(true);
+  setStatus('Working…');
+
+  await streamWorkflow();
+
+  // Fallback cleanup if end_of_workflow was never received
+  if (!workflowFinalized) finishTurn();
+}
+
+function newChat() {
+  if (isRunning) { abortCtrl?.abort(); setRunning(false); }
+  messages          = [];
+  workflowFinalized = false;
+  turn              = null;
+  thinkMode         = false;
+  thinkBuf          = '';
+  renderWelcome();
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+$('userInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+});
+
+renderWelcome();
+</script>
+</body>
+</html>

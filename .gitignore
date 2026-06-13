@@ -15,3 +15,7 @@ agent_history.gif
 .env
 
 .idea/
+*.ipynb
+misc/
+misc/*
+.vscode
